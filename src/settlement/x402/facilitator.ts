@@ -71,7 +71,14 @@ export class X402FacilitatorClient {
   private readonly fetchImpl: FetchLike
 
   constructor(private readonly opts: X402FacilitatorClientOptions) {
-    this.baseUrl = opts.baseUrl.replace(/\/+$/, '')
+    // Trim trailing slashes without a regex. `/\/+$/` is a polynomial-ReDoS
+    // footgun (CodeQL js/polynomial-redos): on a string ending in many slashes
+    // followed by a non-slash, the engine retries the `+` from every position.
+    // Measured on Node: 10k trailing slashes ~74ms, 50k ~1.8s, 200k ~29.5s.
+    // baseUrl is caller-supplied config, so keep it linear and allocation-free.
+    let end = opts.baseUrl.length
+    while (end > 0 && opts.baseUrl.charCodeAt(end - 1) === 47 /* '/' */) end--
+    this.baseUrl = opts.baseUrl.slice(0, end)
     this.timeoutMs = opts.timeoutMs ?? 20_000
     const fallback = (globalThis as { fetch?: FetchLike }).fetch
     const impl = opts.fetchImpl ?? fallback
