@@ -22,15 +22,24 @@ The v0.2 branch is a deliberate productionization pass: it keeps the protocol fo
 
 ## Status
 
-Hedron is **v0.2 in progress**. This branch is the working refactor toward a production-grade Router/Broker runtime.
+Hedron is **v0.2 in progress**. Public APIs may change until `v0.2.0` is tagged. Work is **testnet-first**; mainnet is not implied.
 
-- **Testnet-first.** Hedron is currently focused on Hedera testnet; mainnet readiness is gated on a separate verification pass and is not implied by this branch.
-- **Public APIs may change** until `v0.2.0` is tagged.
-- **Smart contracts are unaudited and experimental.** Do not use against mainnet value without your own review.
-- **Production hosting is a roadmap item**, not a current claim.
-- **Receipts and HCS audit trails are the source of truth.** The repo intentionally does not "log success" without verifiable proofs.
+What is proven today:
 
-For the milestones that follow this cleanup, see [`docs/ROADMAP.md`](docs/ROADMAP.md).
+- **Local loop.** `npm run demo:local` runs discover → quote → policy → pay → execute → receipt against in-memory mocks. Receipt verification is real; HCS and native settlement are mocked.
+- **Quote trust boundary + HAK v4 plugin.** Quote signature, expiry, and `requirementConsistent` checks are required on `Broker.runFlow`. The Hedera Agent Kit plugin exercises that loop offline (`npm run example:hak`).
+- **x402 exact HBAR rail.** `npm run e2e:x402:testnet` settles a real `TransferTransaction` through a Hedera facilitator on testnet. That probe is the rail, not the full Broker + HCS loop.
+
+What is not yet network-proven:
+
+- Native HCS emission and mirror-backed receipt verification (`src/hcs` is still a mock emitter).
+- Native HBAR / HTS settlement (`src/settlement/hedera` is a type surface; those rails mock-settle).
+- `npm run demo:testnet` is a placeholder until [`docs/ROADMAP.md`](docs/ROADMAP.md) `v0.2.0-alpha.2`.
+- x402 through `Broker.runFlow` with an HCS-anchored receipt, and HTS on the x402 rail.
+
+Do not treat logs, CI, or a passing rail probe as a completed commerce flow. A flow without a `RECEIPT_ISSUED` event on a public HCS topic did not succeed.
+
+For versioned milestones see [`docs/ROADMAP.md`](docs/ROADMAP.md).
 
 ---
 
@@ -93,21 +102,15 @@ npm run demo:local
 
 Walks through the full discover → quote → approve → pay → execute → receipt loop against in-memory mocks. The receipt verifier runs at the end and prints the verification path.
 
-### Optional Hedera testnet demo
+### Optional x402 testnet probe
 
-You need a testnet account from <https://portal.hedera.com> and your operator key in `.env`.
+Without credentials, `npm run e2e:x402:testnet` runs facilitator `/supported` and `/verify` only. With `HEDERA_OPERATOR_ID` / `HEDERA_OPERATOR_KEY` it also settles 100 tinybar on-chain. Set `HEDRON_E2E_PAY_TO` to a **different** account than the operator — same-account transfers net to zero and fail settlement. See [`docs/X402_ADAPTER.md`](docs/X402_ADAPTER.md).
 
 ```bash
-# in .env
-HEDERA_NETWORK=testnet
-HEDERA_OPERATOR_ID=0.0.xxxxx
-HEDERA_OPERATOR_KEY=<your-testnet-operator-private-key>
-RUN_HEDERA_INTEGRATION=true
-
-npm run demo:testnet
+npm run e2e:x402:testnet
 ```
 
-The testnet demo writes real HCS audit events to a topic Hedron auto-provisions on first run.
+`npm run demo:testnet` is not a live HCS demo yet. It prints the alpha.2 target and exits. Real HCS emission and HashScan topic URLs land in [`docs/ROADMAP.md`](docs/ROADMAP.md) `v0.2.0-alpha.2`.
 
 ## Repository layout
 
@@ -123,14 +126,14 @@ The testnet demo writes real HCS audit events to a topic Hedron auto-provisions 
 ├── deployments/testnet/       # Public testnet contract ids only
 ├── demo/
 │   ├── local.ts               # canonical mocked end-to-end flow
-│   └── testnet.ts             # opt-in real Hedera testnet flow
+│   └── testnet.ts             # placeholder until alpha.2 (real HCS)
 ├── docs/
 │   ├── INDEX.md · ARCHITECTURE.md · ROUTER_BROKER.md
 │   ├── HCS_RECEIPTS.md · POLICY_ENGINE.md · SECURITY_MODEL.md
 │   ├── QUICKSTART.md · ROADMAP.md
 │   ├── DAYDREAMS_ADAPTER.md · X402_ADAPTER.md · HEDERA_AGENT_KIT_PLUGIN.md
 │   └── DEPENDENCY_HARDENING.md
-├── tests/unit/                # vitest, mock-only, 27 tests
+├── tests/unit/                # vitest, mock-only
 └── src/
     ├── router/                # discovery, capability index, quote dispatch
     ├── broker/                # intent → quote → policy → settle → execute → receipt
@@ -159,11 +162,11 @@ Hedron is built so other agent runtimes plug in without forking:
 
 | Adapter | Status | Doc |
 | --- | --- | --- |
-| Daydreams runtime | interface defined, skeleton in `src/adapters/daydreams/` | [`docs/DAYDREAMS_ADAPTER.md`](docs/DAYDREAMS_ADAPTER.md) |
-| Hedera Agent Kit v4 plugin | interface defined, skeleton in `src/adapters/hedera-agent-kit/` | [`docs/HEDERA_AGENT_KIT_PLUGIN.md`](docs/HEDERA_AGENT_KIT_PLUGIN.md) |
+| Daydreams runtime | interface defined, skeleton | [`docs/DAYDREAMS_ADAPTER.md`](docs/DAYDREAMS_ADAPTER.md) |
+| Hedera Agent Kit v4 plugin | six `BaseTool`s + policy bridge; offline example | [`docs/HEDERA_AGENT_KIT_PLUGIN.md`](docs/HEDERA_AGENT_KIT_PLUGIN.md) |
 | MCP server | planned (v0.3) | — |
-| x402 facilitator (Hedera exact scheme) | adapter interface in `src/settlement/x402/` | [`docs/X402_ADAPTER.md`](docs/X402_ADAPTER.md) |
-| Hedera HBAR / HTS native | primary rail | [`docs/ROUTER_BROKER.md`](docs/ROUTER_BROKER.md) |
+| x402 (Hedera exact, HBAR) | adapter proven on testnet facilitator; not yet through Broker + HCS | [`docs/X402_ADAPTER.md`](docs/X402_ADAPTER.md) |
+| Hedera HBAR / HTS native | type surface; mock settles until alpha.2 | [`docs/ROUTER_BROKER.md`](docs/ROUTER_BROKER.md) |
 
 ## Roadmap
 

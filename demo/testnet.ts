@@ -9,9 +9,9 @@
  *
  *   npm run demo:testnet
  *
- * v0.2 Tier 1 M3 target: replace the mock HCS emitter with the real HCS
- * client and write events to a Hedron-owned topic. For now this file refuses
- * to run unless RUN_HEDERA_INTEGRATION=true, and prints a clear "TODO" if so.
+ * Placeholder until ROADMAP v0.2.0-alpha.2: real HCS emission + mirror
+ * verification. Refuses to pretend the loop ran. Requires
+ * RUN_HEDERA_INTEGRATION=true.
  */
 
 import { loadHedronConfig, validateForNetwork } from '../src/config'
@@ -32,7 +32,7 @@ async function main(): Promise<number> {
       `Audit topic=${cfg.hcs.auditTopicId ?? '(auto-provision)'}`,
   )
   console.log(
-    '[hedron] Real HCS emission lands in Tier 1 M3. See docs/GRANT_EXECUTION_PLAN.md.',
+    '[hedron] Real HCS emission is ROADMAP v0.2.0-alpha.2. See docs/ROADMAP.md.',
   )
   return 0
 }

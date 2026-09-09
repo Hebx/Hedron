@@ -4,6 +4,9 @@ All notable changes to Hedron are documented here. Format follows [Keep a Change
 
 ## [Unreleased]
 
+### Changed
+- Public status copy now matches shipped surface: mocked local loop, HAK v4 plugin offline, x402 exact HBAR rail proven; `demo:testnet` documented as a placeholder until alpha.2.
+
 ### Added
 - Canonical v0.2 documentation: `docs/{INDEX,ARCHITECTURE,ROUTER_BROKER,HCS_RECEIPTS,POLICY_ENGINE,SECURITY_MODEL,QUICKSTART,DAYDREAMS_ADAPTER,PAYAI_X402_ADAPTER,HEDERA_AGENT_KIT_PLUGIN,ROADMAP,DEPENDENCY_HARDENING}.md`.
 - Top-level `SECURITY.md`, `CONTRIBUTING.md`, `CHANGELOG.md`, `RELEASE_CHECKLIST.md`.

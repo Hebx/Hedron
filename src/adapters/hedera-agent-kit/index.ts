@@ -10,8 +10,8 @@
  * ahead of the release in several places).
  *
  * `@hashgraph/hedera-agent-kit`, `@hiero-ledger/sdk` and `zod` are declared as
- * OPTIONAL peer dependencies: importing `hedron` does not pull HAK in, and
- * Hedron core still runs on `@hashgraph/sdk` v2. Only this subpath needs them.
+ * OPTIONAL peer dependencies: importing `hedron` does not pull HAK in.
+ * Live Hedera I/O uses `@hiero-ledger/sdk`. Only this subpath needs HAK.
  *
  *   import { buildHedronPlugin } from 'hedron/adapters/hedera-agent-kit'
  */
