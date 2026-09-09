@@ -35,7 +35,7 @@ The key-handling surface is deliberately confined to `client.ts` so the adapter,
 | --- | --- | --- | --- |
 | `hedera-hbar` | native HBAR transfer | testnet | type surface only, mock settles |
 | `hedera-hts` | HTS fungible token transfer | testnet | type surface only, mock settles |
-| `x402` | x402 exact scheme via configured facilitator | testnet | **implemented, unproven on live facilitator** |
+| `x402` | x402 exact scheme via configured facilitator | testnet | **HBAR proven on live facilitator; HTS unproven; not yet wired through Broker + HCS** |
 | `evm-usdc` | direct ERC-20 transfer | EVM | optional, not implemented |
 
 ## Client payer contract

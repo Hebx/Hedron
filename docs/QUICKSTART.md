@@ -50,28 +50,11 @@ Receipt verified: receiptId=…
 
 No HCS calls are made in mock mode. The chain is computed locally with the same canonical-encoding rules as `docs/HCS_RECEIPTS.md` so the verifier path is real.
 
-## Optional Hedera testnet demo
+## Optional Hedera testnet
 
-1. Edit `.env`:
+`npm run demo:testnet` is a placeholder until ROADMAP `v0.2.0-alpha.2`. It does not write HCS events or print a HashScan topic. When that milestone lands, the first run will provision an audit topic and the verifier will confirm events against the public mirror.
 
-   ```env
-   HEDERA_NETWORK=testnet
-   HEDERA_OPERATOR_ID=0.0.xxxxx
-   HEDERA_OPERATOR_KEY=<your-testnet-operator-private-key>
-   RUN_HEDERA_INTEGRATION=true
-   ```
-
-2. Run:
-
-   ```bash
-   npm run demo:testnet
-   ```
-
-3. The first run provisions an HCS topic and writes its id back into your local `.env`. Subsequent runs reuse the topic.
-
-4. At the end, the verifier reads the topic from a public Hedera mirror and checks the receipt against on-chain events. The printed HashScan link points to the topic so you can inspect the flow visually.
-
-The testnet demo costs only HCS submit fees (fractions of a cent). It does not settle real value unless you explicitly enable an HBAR transfer rail.
+The live path that exists today is the x402 exact HBAR probe (`npm run e2e:x402:testnet`). See [`X402_ADAPTER.md`](X402_ADAPTER.md). Operator credentials stay in `.env`; never commit them.
 
 ## Running the test suite
 

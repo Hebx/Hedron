@@ -46,14 +46,16 @@ Hedera Agent Kit v4 plugin (`src/adapters/hedera-agent-kit/`):
 - Six `BaseTool` subclasses (`hedron_list_agents`, `hedron_get_quote`, `hedron_approve_quote`, `hedron_pay`, `hedron_verify_receipt`, `hedron_get_audit_trail`) built against the shipped `@hashgraph/hedera-agent-kit@4.0.0` surface.
 - Policy bridge exposing Hedron's engine through HAK's four lifecycle stages, registered on `configuration.context.hooks` (HAK v4 has no plugin-level `policies` field).
 - `HedronCommercePort` seam with an in-process implementation driving the real Router + Broker, so `hedron_pay` runs the full verified flow rather than settling directly.
-- HAK, `@hiero-ledger/sdk` and zod are **optional peer dependencies** — Hedron core still runs on `@hashgraph/sdk` v2 and plain consumers are unaffected.
+- HAK, `@hiero-ledger/sdk` and zod are **optional peer dependencies**. Live Hedera I/O uses `@hiero-ledger/sdk`. Do not reintroduce `@hashgraph/sdk`.
 - `npm run example:hak` runs the loop offline (no credentials) including a policy-deny path.
 
-Verified: 58/58 unit tests green (up from 27), lint clean, build clean, `demo:local` reports all 7 receipt checks passing. Docs pass on [`ROUTER_BROKER.md`](ROUTER_BROKER.md) and [`HEDERA_AGENT_KIT_PLUGIN.md`](HEDERA_AGENT_KIT_PLUGIN.md).
+Also in this slice (not originally in the alpha.1 sketch): Hedera x402 exact HBAR rail proven against a live testnet facilitator (`npm run e2e:x402:testnet`). That is a rail probe — it does not yet run through `Broker.runFlow` or write HCS.
+
+Verified on `main` (PR #11): unit tests green, lint clean, build clean, `demo:local` reports all receipt checks passing, `npm audit` 0 critical. Docs: [`ROUTER_BROKER.md`](ROUTER_BROKER.md), [`HEDERA_AGENT_KIT_PLUGIN.md`](HEDERA_AGENT_KIT_PLUGIN.md), [`X402_ADAPTER.md`](X402_ADAPTER.md).
 
 Breaking change: `VerifiableReceipt` gains a required `quoteVerificationHash`, so alpha.0 receipts do not validate against the new verifier.
 
-DoD: tag `v0.2.0-alpha.1`. CI green; new tests green.
+DoD: tag `v0.2.0-alpha.1`. Code is on `main`; the git tag is still pending.
 
 ---
 
@@ -71,20 +73,16 @@ DoD: tag `v0.2.0-beta.0`. `demo:testnet` succeeds; the receipt verifier confirms
 
 ---
 
-## `v0.2.0-beta.1` — x402 adapter (Hedera exact scheme)
+## `v0.2.0-beta.1` — x402 through the Broker
 
-Wire the Broker to the Hedera x402 exact scheme so a paywalled endpoint becomes a first-class settlement rail in Hedron.
+The exact-scheme adapter and live HBAR probe already exist (see alpha.1). This milestone is the missing product loop: a paywalled Hedron endpoint settled through `Broker.runFlow` with an HCS-anchored receipt.
 
-- `src/settlement/x402/` ships the `PaymentAdapter` for the Hedera exact scheme:
-  - `createPaymentRequirement` returns an x402 `402` response (`x-payment` header schema, amount in tinybar, recipient, `expiresAt`, `actionHash`).
-  - `validatePaymentPayload` checks shape, signature, amount, asset, recipient, network, expiry, and `actionHash`.
-  - `settle` dispatches to the configured facilitator and waits for on-chain confirmation; falls back to operator-submitted settlement if the facilitator times out.
-  - `verifySettlement` re-reads the transaction from the mirror node and confirms amount, asset, and recipient.
-- Facilitator is configured per-environment via `HEDRON_X402_FACILITATOR_URL`. Self-hosted and external Hedera-compatible facilitators are both supported; Hedron does not assume any single operator.
-- Receipt's `settlementRef` carries the on-chain tx id and the facilitator id.
-- New e2e test exercises a metered Hedron endpoint that returns `402`, a HAK v4 agent that pays via the adapter, on-chain settlement, and receipt verification.
+- One metered Hedron HTTP route returns `402`; a HAK v4 agent pays via `X402HederaPayer`.
+- `Broker.runFlow` binds the verified quote, policy decision, on-chain settlement, and HCS event range into one receipt.
+- Adapter `verifySettlement` reads the transfer from the public mirror (not only the facilitator response). `receipt.settlementRef` carries the tx id and facilitator id.
+- Facilitator URL stays per-environment (`HEDRON_X402_FACILITATOR_URL`). Hedron does not assume a single operator.
 
-DoD: tag `v0.2.0-beta.1`. End-to-end x402 metered fetch succeeds on Hedera testnet; the receipt verifier confirms the transfer against the mirror.
+DoD: tag `v0.2.0-beta.1`. End-to-end x402 metered fetch succeeds on Hedera testnet; the receipt verifier confirms the transfer against the mirror; a HashScan link for the settlement tx is printed.
 
 ---
 

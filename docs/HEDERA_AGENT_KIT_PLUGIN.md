@@ -10,7 +10,7 @@ Every API shape below was verified against the **shipped `@hashgraph/hedera-agen
 
 ## Installation
 
-HAK is an **optional peer dependency**. Hedron core still runs on `@hashgraph/sdk` v2; only this adapter needs the HAK stack, so plain `hedron` consumers are unaffected.
+HAK is an **optional peer dependency**. Importing `hedron` does not pull HAK in. Live Hedera I/O uses `@hiero-ledger/sdk`. Do not reintroduce `@hashgraph/sdk`.
 
 ```json
 {

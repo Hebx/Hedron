@@ -19,7 +19,7 @@ Run this checklist before tagging any Hedron release. Anything unchecked blocks 
 
 - [ ] `README.md` reflects the new tag's actual surface.
 - [ ] `CHANGELOG.md` has a populated section for the tag (no `[Unreleased]` content unless intentional).
-- [ ] `docs/ROADMAP.md` and `docs/GRANT_EXECUTION_PLAN.md` are accurate.
+- [ ] `docs/ROADMAP.md` matches shipped surface (no dangling grant-plan refs).
 - [ ] `package.json` `version` field matches the tag.
 - [ ] `repository.url`, `homepage`, `bugs.url` all point to `Glorian-Labs/Hedron`.
 
