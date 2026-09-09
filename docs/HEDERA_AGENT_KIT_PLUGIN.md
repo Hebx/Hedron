@@ -1,116 +1,181 @@
 # Hedera Agent Kit v4 Plugin
 
-> Status: **interface defined, skeleton in `src/adapters/hedera-agent-kit/`.** Targets Hedera Agent Kit (HAK) v4 — see <https://hedera.com/blog/hedera-agent-kit-v4-policies-modular-packages-and-plugin-updates/>.
+> Status: **implemented** in `src/adapters/hedera-agent-kit/`. Six `BaseTool` subclasses + a policy bridge, exercised by 16 tests and a runnable example (`npm run example:hak`).
 
-HAK v4 introduces:
+Hedron's plugin exposes the commerce loop as HAK v4 tools, with policy hooks that mirror Hedron's own policy engine. A HAK agent gains the discover → quote → policy → pay → execute → receipt loop with a small tool surface and automatic guardrails.
 
-- A modular `@hashgraph/hedera-agent-kit*` namespace (core, langchain, ai-sdk, elizaos, mcp packages).
-- `BaseTool` — abstract class replacing v3's object-literal tools so the kit can hook into a tool's lifecycle.
-- A first-class **hooks and policies** system with four lifecycle stages:
-  1. **Pre-Tool Execution** — early validation / role-based gating.
-  2. **Post-Parameter Normalization** — inspect/rewrite params before transaction bytes are formed (e.g. address allowlist).
-  3. **Post-Core Action** — final pre-submit check.
-  4. **Post-Tool Execution** — logging / spend tracking / downstream triggers.
-- Explicit plugin imports (an empty `plugins` array now means zero tools).
-- A new namespace for the underlying SDK: `@hiero-ledger/sdk` (peer dependency, ≥ 2.80.0).
+## API accuracy note
 
-Hedron's plugin exposes the commerce loop as HAK tools, with policy hooks that mirror Hedron's own policy engine. This means a HAK agent gains the discover → quote → policy → pay → execute → receipt loop with a tiny tool surface and automatic guardrails.
+Every API shape below was verified against the **shipped `@hashgraph/hedera-agent-kit@4.0.0` type declarations plus a runtime smoke test**. Do not "fix" this document against the upstream markdown docs on GitHub `main` — that documentation is ahead of the published 4.0.0 release and is wrong in at least four specific ways, listed in [Upstream doc traps](#upstream-doc-traps). An earlier revision of this file guessed the API from those docs and was wrong on 6 of 8 points.
 
-## Tool surface (intentionally minimal)
+## Installation
 
-Hedron deliberately keeps the HAK v4 tool surface minimal: **`quote` / `pay` / `verify`** — just enough for an agent to drive the canonical Hedron commerce loop without leaking Hedron internals into the agent's tool list.
-
-| Tool | Purpose |
-| --- | --- |
-| `hedronListAgents` | List provider agents matching a capability filter. |
-| `hedronGetQuote` | Request a quote from a chosen agent. |
-| `hedronApproveQuote` | Approve a quote (HITL path). |
-| `hedronPay` | Submit payment payload to the broker. |
-| `hedronVerifyReceipt` | Verify a receipt against HCS. |
-| `hedronGetAuditTrail` | Read the HCS event chain for a flow. |
-
-Each tool is implemented as a `BaseTool` subclass so the four HAK lifecycle hooks fire automatically.
-
-## Sketched implementation
-
-```ts
-// src/adapters/hedera-agent-kit/tools/getQuote.ts
-import { BaseTool } from '@hashgraph/hedera-agent-kit'
-import { z } from 'zod'
-
-export class HedronGetQuoteTool extends BaseTool {
-  readonly id = 'hedronGetQuote'
-  readonly description = 'Request a Hedron commerce quote for a capability.'
-  readonly schema = z.object({
-    intentId: z.string(),
-    agentId: z.string(),
-    capabilityId: z.string(),
-  })
-
-  async execute(params: z.infer<typeof this.schema>): Promise<QuoteResponse> {
-    return this.deps.brokerClient.requestQuote(params)
-  }
-}
-```
-
-A plugin builder ties the tools together:
-
-```ts
-// src/adapters/hedera-agent-kit/index.ts
-import { coreConsensusPlugin } from '@hashgraph/hedera-agent-kit/plugins'
-
-export function buildHedronPlugin(deps: HedronPluginDeps) {
-  return {
-    id: 'hedron-commerce',
-    description: 'Hedron commerce tools for HAK v4 agents',
-    tools: [
-      new HedronListAgentsTool(deps),
-      new HedronGetQuoteTool(deps),
-      new HedronApproveQuoteTool(deps),
-      new HedronPayTool(deps),
-      new HedronVerifyReceiptTool(deps),
-      new HedronGetAuditTrailTool(deps),
-    ],
-    policies: buildHedronPolicies(deps),
-  }
-}
-```
-
-## Policies (HAK hooks → Hedron policy engine)
-
-Hedron's policy engine is the single source of truth. The HAK plugin exposes thin wrappers that translate HAK lifecycle calls into Hedron policy queries so a HAK agent gets the same default-deny posture without re-implementing rules.
-
-| HAK stage | Hedron action |
-| --- | --- |
-| Pre-Tool Execution | reject tool call if `caller.role` is not allowed by policy |
-| Post-Parameter Normalization | check `quote.pricing.amount` against `maxPricePerCall` and `maxDailySpend` |
-| Post-Core Action | for `hedronPay`, verify the payment payload via `PaymentAdapter.validatePaymentPayload` before submission |
-| Post-Tool Execution | append a structured spend-tracking entry to the audit trail |
-
-All four are programmable; the HAK Agent Lab "no-code panel" view of policies is enabled because the policies are plain TS objects.
-
-## Package wiring
-
-The plugin assumes a HAK v4 host:
+HAK is an **optional peer dependency**. Hedron core still runs on `@hashgraph/sdk` v2; only this adapter needs the HAK stack, so plain `hedron` consumers are unaffected.
 
 ```json
 {
-  "dependencies": {
+  "peerDependencies": {
     "@hashgraph/hedera-agent-kit": "^4.0.0",
-    "@hiero-ledger/sdk": "^2.80.0"
+    "@hiero-ledger/sdk": "^2.81.0",
+    "zod": "^3.25.76"
   }
 }
 ```
 
-Hedron itself still depends on `@hashgraph/sdk` (v2) on this branch — the HAK v4 plugin is the bridge to `@hiero-ledger/sdk` and only loads when an operator opts in (`HAK_PLUGIN_ENABLED=true`). Migrating Hedron's core to `@hiero-ledger/sdk` is a separate work item, planned alongside the M6–M9 grant milestones.
+`zod` must be **3.x** — HAK 4.0.0 pins `zod@3.25.76`. Zod 4 schemas will not work in tool `parameters`.
 
-## Open questions
+## Tool surface (intentionally minimal)
 
-- HAK v4 is a fresh release; the BaseTool / hooks API may evolve. The adapter pins versions and ships a smoke-test matrix.
-- MCP integration: HAK v4 ships `@hashgraph/hedera-agent-kit-mcp` (a standalone MCP server). Hedron's own MCP adapter (planned for v0.3) will likely shell out to that package rather than re-implement.
+Six tools, named with `snake_case` `method` ids (the strings an agent dispatches on):
+
+| `method` | Purpose | Moves value |
+| --- | --- | --- |
+| `hedron_list_agents` | List provider agents matching a capability filter. | no |
+| `hedron_get_quote` | Request a signed quote; reports whether it passed verification. | no |
+| `hedron_approve_quote` | Record a HITL approval for a policy-gated quote. | no |
+| `hedron_pay` | Run the full broker flow and issue a receipt. | **yes** |
+| `hedron_verify_receipt` | Verify a receipt against the HCS chain (7 checks). | no |
+| `hedron_get_audit_trail` | Read the ordered HCS event chain for a flow. | no |
+
+`hedron_pay` deliberately does not settle directly — it calls `Broker.runFlow`, so quote verification, policy evaluation, settlement and receipt issuance all apply unchanged.
+
+## Architecture
+
+```
+HAK v4 host (LangChain / MCP / ai-sdk / ElizaOS)
+        │  configuration = { plugins: [hedronPlugin], context: { hooks } }
+        ▼
+src/adapters/hedera-agent-kit/
+  index.ts       buildHedronPlugin() · buildHedronHooks() · buildHedronConfiguration()
+  tools.ts       6 BaseTool subclasses
+  policies.ts    AbstractPolicy / AbstractHook bridge onto Hedron's policy engine
+  deps.ts        HedronCommercePort — the narrow port the tools talk to
+  localPort.ts   in-process port backed by a live Router + Broker
+        ▼
+Router · Broker · policy engine · quote verifier · HCS emitter
+```
+
+`HedronCommercePort` is the seam: `LocalHedronCommercePort` runs everything in-process today, and an HTTP-backed port can replace it without touching the tools.
+
+## Defining a tool (real v4 shape)
+
+```ts
+import { BaseTool } from '@hashgraph/hedera-agent-kit'
+import { z } from 'zod'   // 3.x
+
+const params = z.object({ quoteId: z.string() })
+
+class HedronPayTool extends BaseTool<z.infer<typeof params>, z.infer<typeof params>> {
+  method = 'hedron_pay'      // identity field is `method`, NOT `id`
+  name = 'Hedron Pay'
+  description = 'Runs the Hedron commerce flow for a quote.'
+  parameters = params        // zod schema field is `parameters`, NOT `schema`
+
+  async normalizeParams(p) { return p }                  // stage 2
+  async coreAction(np) { /* real work here */ }          // stage 4
+  async shouldSecondaryAction() { return false }         // DEFAULT IS TRUE — must override
+  async secondaryAction(r) { return r }                  // abstract; required even if unused
+}
+```
+
+Key constraints:
+
+- **`execute()` is implemented by `BaseTool`** and drives the hook lifecycle. Overriding it loses hooks and policies. Implement `normalizeParams` / `coreAction` / `secondaryAction` instead.
+- **`shouldSecondaryAction()` defaults to `true`.** Every Hedron tool completes its work in `coreAction`, so all six override it to `false` via a shared `HedronTool` base. Forgetting this runs the secondary stage against a bogus request object.
+- **Errors never escape `execute()`.** `BaseTool.handleError` converts a throw into `{ raw: { error }, humanMessage }`. That is why each Hedron tool returns an explicit `ok` flag in `raw` rather than relying on exceptions.
+- `BaseTransactionTool` **does not exist in 4.0.0** despite upstream `PLUGINS.md` telling you to extend it. For a transaction tool, extend `BaseTool` and use the exported `handleTransaction` inside `secondaryAction`.
+
+## Building and registering the plugin
+
+```ts
+import { ToolDiscovery, AgentMode } from '@hashgraph/hedera-agent-kit'
+import { buildHedronPlugin, buildHedronHooks } from 'hedron/adapters/hedera-agent-kit'
+
+const plugin = buildHedronPlugin(deps)
+
+// Hooks AND policies both go here — there is NO plugin-level `policies` field.
+const context = {
+  mode: AgentMode.AUTONOMOUS,
+  hooks: buildHedronHooks(deps, { allowedRoles: ['user'], maxAmountTinybar: '500000000' }),
+}
+
+const configuration = { plugins: [plugin], context }   // plugins are explicit in v4
+const tools = ToolDiscovery.createFromConfiguration(configuration).getAllTools(context, configuration)
+```
+
+The real `Plugin` type is:
+
+```ts
+type Plugin = {
+  name: string                              // identity field — NOT `id`
+  version?: string
+  description?: string
+  tools: (context: Context) => Tool[]       // a FUNCTION — not an array
+}
+```
+
+For a LangChain host, the toolkit lives in a **separate npm package**:
+
+```ts
+import { HederaLangchainToolkit } from '@hashgraph/hedera-agent-kit-langchain'  // v1.0.0
+const toolkit = new HederaLangchainToolkit({ client, configuration: { plugins: [plugin], context } })
+```
+
+`configuration.tools` is an optional **allowlist of `method` strings**; omit it to expose everything from the listed plugins.
+
+## Policies (HAK hooks → Hedron policy engine)
+
+Hedron's policy engine remains the single source of truth. The bridge classes translate HAK lifecycle calls into Hedron policy questions.
+
+The full lifecycle is 7 steps, of which **4 are hookable**. There is **no enum** — stages are identified by method name only:
+
+| # | Hook method | Policy block method | Hedron use |
+| --- | --- | --- | --- |
+| 1 | `preToolExecutionHook` | `shouldBlockPreToolExecution` | reject disallowed `caller.role` |
+| 3 | `postParamsNormalizationHook` | `shouldBlockPostParamsNormalization` | per-call spend cap; block unverified quotes |
+| 5 | `postCoreActionHook` | `shouldBlockPostCoreAction` | available; unused today |
+| 7 | `postToolExecutionHook` | `shouldBlockPostSecondaryAction` | append spend-tracking entries |
+
+Note the asymmetry in upstream naming: the stage-7 hook is `postToolExecutionHook` but its policy counterpart is `shouldBlock**PostSecondaryAction**`, and its params type is `PostSecondaryActionParams`.
+
+Hedron ships:
+
+- `HedronCallerRolePolicy` — stage 1 role gate.
+- `HedronSpendCapPolicy` — stage 3 per-call cap; **fails closed** on an unknown quote id.
+- `HedronQuoteVerifiedPolicy` — stage 3 mirror of the broker's `QUOTE_VERIFIED` gate.
+- `HedronSpendTrackingHook` — observes all four stages, never blocks.
+
+Registration rules that differ from the old design:
+
+- Hooks and policies both go in **`configuration.context.hooks: AbstractHook[]`**, because `AbstractPolicy extends AbstractHook`. Nothing is registered on the plugin.
+- Hook methods take **two arguments, `(params, method)`**. The `context` is *inside* `params`.
+- Every hook is called for **every** tool; filtering on `relevantTools` is the hook's own responsibility. Hedron's classes all do this filtering.
+- A policy returns `true` from `shouldBlock*` to **block**. Do not override the `*Hook` methods on a policy — the base class calls your `shouldBlock*` and throws.
+- Concrete built-ins are **not** on the root export: use `@hashgraph/hedera-agent-kit/hooks` (`HcsAuditTrailHook`, `HolAuditTrailHook`) and `@hashgraph/hedera-agent-kit/policies` (`MaxRecipientsPolicy`, `RejectToolPolicy`).
+
+### Known 4.0.0 inconsistency
+
+The built-in core plugin tools are **not `BaseTool` instances at runtime** in 4.0.0 (`instanceof BaseTool === false`), which implies they do **not** fire hooks or policies. Hedron's own tools do extend `BaseTool` and demonstrably fire all four stages (asserted in `tests/unit/adapters/hedera-agent-kit.test.ts`). **Do not assume these policies cover core Hedera tools** — verify before relying on hook coverage for anything outside the Hedron surface.
+
+## Upstream doc traps
+
+Four places where GitHub `main` docs disagree with the shipped 4.0.0 package:
+
+1. Hooks/policies imported from the package root — they are **only** on the `/hooks` and `/policies` subpaths; the root import yields `undefined`.
+2. A 3-arg hook signature `(context, params, method)` — the real signature is **2-arg `(params, method)`**.
+3. `extend BaseTransactionTool` — **that class is not in the 4.0.0 tarball.**
+4. `HederaLangchainToolkit` imported from the core package — it is in **`@hashgraph/hedera-agent-kit-langchain`**.
+
+## Example
+
+`npm run example:hak` (`examples/hak-v4-buyer/index.ts`) runs offline — no credentials, no network. It registers the plugin explicitly, walks discover → quote → pay → verify → audit, prints the 11-event HCS chain and all 7 receipt checks, then demonstrates a policy **deny** by capping spend at 0.5 HBAR against a 1 HBAR quote.
+
+## Tests
+
+`tests/unit/adapters/hedera-agent-kit.test.ts` (16 tests) executes tools through the **real** HAK runtime via `ToolDiscovery`, asserting: the v4 plugin shape (`name`, `tools` as a function, no `id`/`policies`), `BaseTool` instance identity, the `configuration.tools` allowlist, all four lifecycle stages firing in order, spend-cap allow **and** deny, the role gate, and fail-closed on an unknown quote id.
 
 ## Status
 
-- v0.2.0-alpha.0: `BaseTool` subclasses + plugin builder behind a feature flag; conformance test on the mock broker.
-- v0.2.0: end-to-end demo of a HAK v4 agent buying a Hedron capability with policy enforcement.
-- M6–M9 grant: full MCP tool surface, third-party HAK plugin compatibility tests, published as `@glorian-labs/hedron-hak-plugin`.
+- v0.2.0-alpha.1: six `BaseTool` tools + policy bridge + local port, 16 tests, offline example. ✅
+- v0.2.0: same loop against Hedera testnet with a real HCS emitter and HBAR settlement.
+- M6–M9 grant (Integrations v1): published as a versioned package with docs and examples, plus third-party HAK host compatibility tests and the MCP tool surface.

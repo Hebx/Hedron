@@ -42,7 +42,7 @@ The Router never moves value and never executes work. If it goes down, no money 
 ## State machine
 
 ```
-created → discovered → quoted → policy_evaluated
+created → discovered → quoted → quote_verified → policy_evaluated
                                     │
               ┌─────────────────────┴─────────────────────┐
               ▼                                           ▼
@@ -81,6 +81,37 @@ A `QuoteResponse` must include:
 - `signature` over the above by the provider agent
 
 A `SettlementIntent` MUST reference the exact `quoteId`. If the broker receives a payment payload that doesn't match the quoteId+actionHash+amount+asset+recipient+expiry, the broker rejects it and emits `EXECUTION_FAILED` with reason `quote_mismatch`.
+
+### Signing order (normative)
+
+Implemented in `src/quotes/` and enforced by the Broker. A quote producer MUST:
+
+1. Build the **quote core** — `quoteId`, `quoteRequestId`, `intentId`, `correlationId`, `agentId`, `capabilityId`, `pricing`, `actionHash`, `policyRequirements`, `expiresAt`. The core deliberately excludes `paymentRequirement` so the hash below is non-circular.
+2. Compute `quoteCoreHash(core)` and stamp it into `paymentRequirement.quoteHash` — **before signing**.
+3. Sign the whole unsigned quote, `paymentRequirement` included.
+
+Signing before step 2 leaves the payment requirement unbound and swappable. `Router.mockQuoteFromCapability` follows this order; real provider adapters must too.
+
+### Broker quote gate
+
+`Broker.runFlow` runs a `QuoteVerifier` **before policy evaluation and before any settlement side effect**. The verifier is a required constructor dependency (`BrokerDeps.quoteVerifier`) — there is no default, so a broker cannot be built that silently skips the gate. `RegistryQuoteVerifier` resolves the signer identity from the agent registry and fails closed on an unregistered agent.
+
+Checks run in a fixed order so the first failure is deterministic:
+
+| Check | Rejects | Error |
+| --- | --- | --- |
+| `agentKnown` | quote from an agent that is not in the registry | `QuoteSignatureError` |
+| `signature` | signature that does not match the registered agent identity (bound to `identity.publicKey`, not just `agentId`) | `QuoteSignatureError` |
+| `quoteHashBinding` | `paymentRequirement.quoteHash` that does not equal `quoteCoreHash(core)` | `QuoteSignatureError` |
+| `requirementConsistent` | requirement whose `rail`, `amount`, `actionHash`, or `correlationId` contradicts the quote it is attached to | `QuoteSignatureError` |
+| `quoteExpiry` | `quote.expiresAt` at or before `now()`, or unparseable | `QuoteExpiredError` |
+| `paymentRequirementExpiry` | `paymentRequirement.expiresAt` at or before `now()`, or unparseable | `QuoteExpiredError` |
+
+`requirementConsistent` exists because the core hash pins quote *identity* while this check pins quote *terms*. Without it, a signing agent could advertise one price in `pricing` (what the policy engine reads) and demand another in `paymentRequirement` (what settlement pays).
+
+Every run emits `QUOTE_VERIFIED` carrying the per-check outcome, the verifier scheme id, and `quoteVerificationHash` — **including on failure**, so a rejected quote leaves an auditable trace before the throw. The hash is anchored into `VerifiableReceipt.quoteVerificationHash`, and the receipt verifier's `quoteVerified` check requires the event to be present, `ok: true`, hash-matched, and ordered `QUOTE_RECEIVED → QUOTE_VERIFIED → POLICY_EVALUATED`.
+
+`AlwaysTrustQuoteVerifier` is a test-only escape hatch. It still emits the event; it must never be wired into a broker that moves real value.
 
 ## Replay protection invariants
 

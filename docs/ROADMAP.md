@@ -29,16 +29,29 @@ DoD: tag `v0.2.0-alpha.0`. Released as PR #6 on 2026-05-19.
 
 ---
 
-## `v0.2.0-alpha.1` — quote-verification + ergonomics (next)
+## `v0.2.0-alpha.1` — quote-verification + HAK v4 plugin ✅
 
-Small, defensive slice. Locks the contract between Router and Broker so a quote cannot be silently swapped or accepted after expiry, before any real-network code lands.
+Defensive slice plus the first real ecosystem integration. Locks the contract between Router and Broker so a quote cannot be silently swapped or accepted after expiry, and lands the Hedera Agent Kit v4 plugin against the real published API.
 
-- `Broker.runFlow` verifies `quote.signature` against the registered agent identity before policy. Mismatched signatures fail closed with a typed `QuoteSignatureError`.
+Quote verification (`src/quotes/`):
+
+- `Broker.runFlow` verifies `quote.signature` against the registered agent identity before policy. Mismatched signatures fail closed with a typed `QuoteSignatureError`. The verifier is a **required** `BrokerDeps` field, so a broker cannot be constructed that skips the gate.
 - `Broker.runFlow` checks `quote.expiresAt` and `paymentRequirement.expiresAt` against `now()`. Expired quotes fail closed with `QuoteExpiredError`.
-- Emit `QUOTE_VERIFIED` HCS event with the verifier outcome and include it in the receipt's chain integrity check.
 - Router stamps `paymentRequirement.quoteHash` **before** signing the quote, so the quote signature binds the payment requirement to the action.
-- Tests cover signature mismatch, expired quote, and `QUOTE_VERIFIED` event ordering.
-- Docs pass on [`ROUTER_BROKER.md`](ROUTER_BROKER.md) and [`SECURITY_MODEL.md`](SECURITY_MODEL.md) for the new event and the new errors.
+- A `requirementConsistent` check rejects a requirement whose `rail`, `amount`, `actionHash` or `correlationId` contradicts the quote — the core hash pins quote *identity*, this pins quote *terms*, so a signing agent cannot advertise one price to the policy engine and demand another from settlement.
+- `QUOTE_VERIFIED` HCS event carries the per-check outcome and is emitted **even on failure**, so a rejected quote still leaves an auditable trace. Its hash is anchored into the receipt as `quoteVerificationHash` and enforced by a 7th verifier check (`quoteVerified`) that also requires `QUOTE_RECEIVED → QUOTE_VERIFIED → POLICY_EVALUATED` ordering.
+
+Hedera Agent Kit v4 plugin (`src/adapters/hedera-agent-kit/`):
+
+- Six `BaseTool` subclasses (`hedron_list_agents`, `hedron_get_quote`, `hedron_approve_quote`, `hedron_pay`, `hedron_verify_receipt`, `hedron_get_audit_trail`) built against the shipped `@hashgraph/hedera-agent-kit@4.0.0` surface.
+- Policy bridge exposing Hedron's engine through HAK's four lifecycle stages, registered on `configuration.context.hooks` (HAK v4 has no plugin-level `policies` field).
+- `HedronCommercePort` seam with an in-process implementation driving the real Router + Broker, so `hedron_pay` runs the full verified flow rather than settling directly.
+- HAK, `@hiero-ledger/sdk` and zod are **optional peer dependencies** — Hedron core still runs on `@hashgraph/sdk` v2 and plain consumers are unaffected.
+- `npm run example:hak` runs the loop offline (no credentials) including a policy-deny path.
+
+Verified: 58/58 unit tests green (up from 27), lint clean, build clean, `demo:local` reports all 7 receipt checks passing. Docs pass on [`ROUTER_BROKER.md`](ROUTER_BROKER.md) and [`HEDERA_AGENT_KIT_PLUGIN.md`](HEDERA_AGENT_KIT_PLUGIN.md).
+
+Breaking change: `VerifiableReceipt` gains a required `quoteVerificationHash`, so alpha.0 receipts do not validate against the new verifier.
 
 DoD: tag `v0.2.0-alpha.1`. CI green; new tests green.
 

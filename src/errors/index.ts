@@ -52,6 +52,53 @@ export class QuoteMismatchError extends HedronError {
   }
 }
 
+/**
+ * The quote signature does not match the identity registered for the agent
+ * (or the payment requirement is not bound to the signed quote).
+ */
+export class QuoteSignatureError extends HedronError {
+  readonly quoteId: string
+  readonly agentId: string
+  readonly check: string
+  constructor(
+    opts: { quoteId: string; agentId: string; check: string; detail?: string },
+    correlationId?: string,
+  ) {
+    super(
+      'hedron/quote/signature',
+      `quote ${opts.quoteId} failed verification check '${opts.check}' for agent ${opts.agentId}` +
+        (opts.detail !== undefined ? `: ${opts.detail}` : ''),
+      { correlationId: correlationId ?? '' },
+    )
+    this.name = 'QuoteSignatureError'
+    this.quoteId = opts.quoteId
+    this.agentId = opts.agentId
+    this.check = opts.check
+  }
+}
+
+/** The quote or its payment requirement is past its expiry at evaluation time. */
+export class QuoteExpiredError extends HedronError {
+  readonly quoteId: string
+  readonly expiredAt: string
+  readonly check: string
+  constructor(
+    opts: { quoteId: string; expiredAt: string; check: string; detail?: string },
+    correlationId?: string,
+  ) {
+    super(
+      'hedron/quote/expired',
+      `quote ${opts.quoteId} expired (${opts.check}, expiresAt=${opts.expiredAt})` +
+        (opts.detail !== undefined ? `: ${opts.detail}` : ''),
+      { correlationId: correlationId ?? '' },
+    )
+    this.name = 'QuoteExpiredError'
+    this.quoteId = opts.quoteId
+    this.expiredAt = opts.expiredAt
+    this.check = opts.check
+  }
+}
+
 export class ReplayDetectedError extends HedronError {
   constructor(paymentId: string, correlationId?: string) {
     super('hedron/payment/replay', `replay detected for paymentId=${paymentId}`, {

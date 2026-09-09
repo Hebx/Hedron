@@ -45,7 +45,18 @@ export interface HedronConfig {
     htsSettlementTokenId?: string
   }
   adapters: {
-    x402: { facilitatorUrl?: string }
+    x402: {
+      /** Facilitator base URL. Absent/empty disables the x402 rail. */
+      facilitatorUrl?: string
+      /** Optional bearer token; open-access facilitators need none. */
+      facilitatorApiKey?: string
+      /** Short name; mapped to the CAIP-2 id (`hedera:testnet`/`hedera:mainnet`). */
+      network: 'testnet' | 'mainnet'
+      /** Hedera account receiving x402 payments (`payTo`). */
+      payTo?: string
+      /** Fee-sponsoring account; discovered from `/supported` when absent. */
+      feePayer?: string
+    }
     evm: { rpcUrl?: string; chainId?: number; usdcContract?: string; merchantAddress?: string }
     daydreams: { agentId?: string; apiBaseUrl?: string }
     hak: { enabled: boolean; llmProvider?: string }
@@ -280,6 +291,7 @@ export type HedronEventType =
   | 'AGENTS_DISCOVERED'
   | 'QUOTE_REQUESTED'
   | 'QUOTE_RECEIVED'
+  | 'QUOTE_VERIFIED'
   | 'POLICY_EVALUATED'
   | 'APPROVAL_REQUIRED'
   | 'APPROVAL_GRANTED'
@@ -326,6 +338,12 @@ export interface VerifiableReceipt extends Receipt {
   hcsSequenceStart: number
   hcsSequenceEnd: number
   policyDecisionHash: string
+  /**
+   * sha256 hex of the canonical quote-verification outcome emitted as
+   * `QUOTE_VERIFIED`. Anchors "this flow spent against a quote that was
+   * verified" into the receipt.
+   */
+  quoteVerificationHash: string
   settlementHash: string
   rail: PaymentRail
   asset:

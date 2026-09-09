@@ -17,6 +17,7 @@ import type {
   SettlementVerification,
 } from './types'
 export * from './types'
+export * from './x402'
 
 /**
  * Mock in-process payment adapter used by the local demo and the unit tests.

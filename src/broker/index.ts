@@ -5,7 +5,12 @@
  * against in-memory adapters. Real rails plug in via the same interfaces.
  */
 
-import { ApprovalRequiredError, PolicyDeniedError } from '../errors'
+import {
+  ApprovalRequiredError,
+  PolicyDeniedError,
+  QuoteExpiredError,
+  QuoteSignatureError,
+} from '../errors'
 import { policy, evaluate as evaluatePolicy } from '../policy'
 import type { PolicyDecisionEvent, RuleSet } from '../policy'
 import { canonicalHash } from '../utils/canonical'
@@ -13,6 +18,7 @@ import { newFlowId, newPaymentId, newReceiptId } from '../utils/ids'
 import { buildEvent, type HcsEmitter } from '../hcs'
 import { verifyReceipt, type VerificationResult } from '../receipts'
 import type { PaymentAdapter } from '../settlement'
+import type { QuoteVerificationResult, QuoteVerifier } from '../quotes'
 import type {
   IntentRequest,
   PolicyContext,
@@ -26,6 +32,29 @@ export interface BrokerDeps {
   rules: RuleSet
   operatorId: string
   topicId: string
+  /**
+   * Verifies quote signature, quote→payment-requirement binding, and expiry
+   * before any policy evaluation or settlement. Required: a broker without a
+   * verifier would spend against unverified quotes.
+   */
+  quoteVerifier: QuoteVerifier
+}
+
+/**
+ * Canonical anchor for a quote verification outcome. Recomputable by an
+ * auditor from the `QUOTE_VERIFIED` event payload alone.
+ */
+export function quoteVerificationHash(result: QuoteVerificationResult): string {
+  return canonicalHash({
+    scheme: 'hedron-quote-verification-hash-v1',
+    quoteId: result.quoteId,
+    agentId: result.agentId,
+    verifierScheme: result.scheme,
+    ok: result.ok,
+    checks: Object.fromEntries(
+      Object.entries(result.checks).map(([name, check]) => [name, check.ok]),
+    ),
+  })
 }
 
 export interface RunFlowInput {
@@ -103,9 +132,62 @@ export class Broker {
       }),
     )
 
-    // 5) POLICY_EVALUATED
+    // 5) QUOTE_VERIFIED — signature, requirement binding, expiry. Fails closed
+    //    BEFORE policy evaluation and before any settlement side effect.
+    const now = input.now ?? (() => new Date())
+    const quoteVerification = this.deps.quoteVerifier.verify(quote, { now: now() })
+    const quoteVerificationAnchor = quoteVerificationHash(quoteVerification)
+    await this.deps.emitter.emit(
+      buildEvent({
+        type: 'QUOTE_VERIFIED',
+        correlationId,
+        flowId,
+        quoteId: quote.quoteId,
+        agentId: quote.agentId,
+        capabilityId: quote.capabilityId,
+        operatorId,
+        payload: {
+          ok: quoteVerification.ok,
+          verifierScheme: quoteVerification.scheme,
+          verifiedAt: quoteVerification.verifiedAt,
+          checks: quoteVerification.checks,
+          ...(quoteVerification.failedCheck !== undefined
+            ? { failedCheck: quoteVerification.failedCheck }
+            : {}),
+          quoteVerificationHash: quoteVerificationAnchor,
+        },
+      }),
+    )
+
+    if (!quoteVerification.ok) {
+      const failed = quoteVerification.failedCheck!
+      const detail = quoteVerification.checks[failed].detail
+      if (failed === 'quoteExpiry' || failed === 'paymentRequirementExpiry') {
+        throw new QuoteExpiredError(
+          {
+            quoteId: quote.quoteId,
+            expiredAt:
+              failed === 'quoteExpiry' ? quote.expiresAt : quote.paymentRequirement.expiresAt,
+            check: failed,
+            ...(detail !== undefined ? { detail } : {}),
+          },
+          correlationId,
+        )
+      }
+      throw new QuoteSignatureError(
+        {
+          quoteId: quote.quoteId,
+          agentId: quote.agentId,
+          check: failed,
+          ...(detail !== undefined ? { detail } : {}),
+        },
+        correlationId,
+      )
+    }
+
+    // 6) POLICY_EVALUATED
     const ctx: PolicyContext = {
-      timestamp: (input.now ?? (() => new Date()))().toISOString(),
+      timestamp: now().toISOString(),
       correlationId,
       intent,
       quote,
@@ -137,6 +219,7 @@ export class Broker {
         correlationId,
         seqStart,
         policyDecisionHash,
+        quoteVerificationAnchor,
         'mock-no-settlement',
         new PolicyDeniedError(policyEvent.decision.reason, correlationId).message,
       )
@@ -167,7 +250,7 @@ export class Broker {
       )
     }
 
-    // 7) PAYMENT_REQUIRED
+    // 8) PAYMENT_REQUIRED
     const requirement = await this.deps.paymentAdapter.createPaymentRequirement({
       quote,
       correlationId,
@@ -196,7 +279,7 @@ export class Broker {
       idempotencyKey,
     })
 
-    // 8) PAYMENT_VERIFIED
+    // 9) PAYMENT_VERIFIED
     await this.deps.emitter.emit(
       buildEvent({
         type: 'PAYMENT_VERIFIED',
@@ -212,7 +295,7 @@ export class Broker {
       }),
     )
 
-    // 9) EXECUTION_STARTED
+    // 10) EXECUTION_STARTED
     const executionId = `exec_${paymentId.slice(4)}`
     await this.deps.emitter.emit(
       buildEvent({
@@ -236,7 +319,7 @@ export class Broker {
       resultHash = canonicalHash({ failure: failureReason })
     }
 
-    // 10) EXECUTION_COMPLETED | EXECUTION_FAILED
+    // 11) EXECUTION_COMPLETED | EXECUTION_FAILED
     await this.deps.emitter.emit(
       buildEvent({
         type: terminalType,
@@ -249,7 +332,7 @@ export class Broker {
       }),
     )
 
-    // 11) RECEIPT_ISSUED
+    // 12) RECEIPT_ISSUED
     const recipient = (() => {
       if ('recipient' in requirement) return requirement.recipient
       return `agent:${quote.agentId}`
@@ -267,6 +350,7 @@ export class Broker {
             receiptId,
             resultHash,
             policyDecisionHash,
+            quoteVerificationHash: quoteVerificationAnchor,
             settlementHash: settlement.settlementHash,
           },
         }),
@@ -287,6 +371,7 @@ export class Broker {
       hcsSequenceEnd: seqEnd,
       resultHash,
       policyDecisionHash,
+      quoteVerificationHash: quoteVerificationAnchor,
       settlementHash: settlement.settlementHash,
       rail: quote.pricing.rail,
       asset: requirement.asset,
@@ -315,6 +400,7 @@ export class Broker {
     correlationId: string,
     seqStart: number,
     policyDecisionHash: string,
+    quoteVerificationAnchor: string,
     settlementHashPlaceholder: string,
     failureReason: string,
   ): Promise<RunFlowOutput> {
@@ -339,6 +425,7 @@ export class Broker {
             receiptId,
             resultHash: canonicalHash({ failureReason }),
             policyDecisionHash,
+            quoteVerificationHash: quoteVerificationAnchor,
             settlementHash: settlementHashPlaceholder,
           },
         }),
@@ -358,6 +445,7 @@ export class Broker {
       hcsSequenceEnd: seqEnd,
       resultHash: canonicalHash({ failureReason }),
       policyDecisionHash,
+      quoteVerificationHash: quoteVerificationAnchor,
       settlementHash: settlementHashPlaceholder,
       rail: quote.pricing.rail,
       asset: { kind: 'hbar' as const },

@@ -30,6 +30,11 @@
       "require": "./dist/src/registry/index.js",
       "types": "./dist/src/registry/index.d.ts"
     },
+    "./quotes": {
+      "import": "./dist/src/quotes/index.js",
+      "require": "./dist/src/quotes/index.js",
+      "types": "./dist/src/quotes/index.d.ts"
+    },
     "./policy": {
       "import": "./dist/src/policy/index.js",
       "require": "./dist/src/policy/index.js",
@@ -102,6 +107,8 @@
     "demo": "npm run demo:local",
     "demo:local": "tsx demo/local.ts",
     "demo:testnet": "tsx demo/testnet.ts",
+    "example:hak": "tsx examples/hak-v4-buyer/index.ts",
+    "e2e:x402:testnet": "tsx scripts/e2e-x402-testnet.ts",
     "secrets:scan": "gitleaks detect --source . --no-git --redact"
   },
   "repository": {
@@ -115,18 +122,39 @@
   },
   "homepage": "https://github.com/Glorian-Labs/Hedron#readme",
   "dependencies": {
-    "@hashgraph/sdk": "^2.75.0",
     "dotenv": "^16.6.1"
   },
+  "peerDependencies": {
+    "@hashgraph/hedera-agent-kit": "^4.0.0",
+    "@hiero-ledger/sdk": "^2.81.0",
+    "zod": "^3.25.76"
+  },
+  "peerDependenciesMeta": {
+    "@hashgraph/hedera-agent-kit": {
+      "optional": true
+    },
+    "@hiero-ledger/sdk": {
+      "optional": true
+    },
+    "zod": {
+      "optional": true
+    }
+  },
   "devDependencies": {
+    "@hashgraph/hedera-agent-kit": "^4.0.0",
+    "@hiero-ledger/sdk": "^2.86.0",
     "@types/node": "^24.9.1",
+    "@vitest/coverage-v8": "4.1.10",
+    "@x402/core": "^2.20.0",
+    "@x402/hedera": "^2.20.0",
     "eslint": "^9.38.0",
     "prettier": "^3.6.2",
     "rimraf": "^6.0.1",
     "tsx": "^4.19.2",
     "typescript": "^5.9.3",
     "typescript-eslint": "^8.18.0",
-    "vitest": "^2.1.8"
+    "vitest": "4.1.10",
+    "zod": "3.25.76"
   },
   "engines": {
     "node": ">=20"

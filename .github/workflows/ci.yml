@@ -67,6 +67,10 @@ jobs:
             | tar -xz -C /usr/local/bin gitleaks
           gitleaks version
 
+      # Note: `--no-git` ignores .gitignore, so a local run with a populated
+      # dist/ will also scan build output and double-report findings from the
+      # source it was compiled from. CI checks out clean, so dist/ is absent
+      # here — but that is why a local repro can show more hits than CI.
       - name: Scan working tree
         run: gitleaks detect --source . --no-git --redact --report-format sarif --report-path gitleaks.sarif
 

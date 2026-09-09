@@ -23,4 +23,8 @@ regexes = [
     '''<placeholder-[a-z0-9-]+>''',
     '''placeholder-key-for-0\.0\.[0-9]+''',
     '''PLACEHOLDER_(ANALYZER|VERIFIER|SETTLEMENT)_KEY''',
+    # Reads of our own env vars are not secrets. `generic-api-key` fires on the
+    # long `facilitatorApiKey: env.HEDRON_X402_FACILITATOR_API_KEY` identifier
+    # in src/config/index.ts — there is no literal value anywhere in the file.
+    '''env\.HEDRON_[A-Z0-9_]*(KEY|SECRET|TOKEN)''',
 ]

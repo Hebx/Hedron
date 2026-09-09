@@ -13,6 +13,7 @@ import { Router } from '../src/router'
 import { Broker } from '../src/broker'
 import { MockHcsEmitter } from '../src/hcs'
 import { MockPaymentAdapter } from '../src/settlement'
+import { RegistryQuoteVerifier } from '../src/quotes'
 import { policy } from '../src/policy'
 import { newCorrelationId, newPaymentId } from '../src/utils/ids'
 import type { AgentCard, IntentRequest } from '../src/types'
@@ -23,7 +24,11 @@ async function main(): Promise<number> {
 
   const exampleAgents: AgentCard[] = [
     {
-      identity: { id: 'agent-analyzer', displayName: 'Analyzer Agent' },
+      identity: {
+        id: 'agent-analyzer',
+        displayName: 'Analyzer Agent',
+        publicKey: 'pk-agent-analyzer',
+      },
       manifest: {
         id: 'hedron/example-analyzer',
         kind: 'agent-runtime',
@@ -43,7 +48,11 @@ async function main(): Promise<number> {
       ],
     },
     {
-      identity: { id: 'agent-verifier', displayName: 'Verifier Agent' },
+      identity: {
+        id: 'agent-verifier',
+        displayName: 'Verifier Agent',
+        publicKey: 'pk-agent-verifier',
+      },
       manifest: {
         id: 'hedron/example-verifier',
         kind: 'agent-runtime',
@@ -63,7 +72,11 @@ async function main(): Promise<number> {
       ],
     },
     {
-      identity: { id: 'agent-settler', displayName: 'Settlement Agent' },
+      identity: {
+        id: 'agent-settler',
+        displayName: 'Settlement Agent',
+        publicKey: 'pk-agent-settler',
+      },
       manifest: {
         id: 'hedron/example-settler',
         kind: 'agent-runtime',
@@ -132,6 +145,7 @@ async function main(): Promise<number> {
     rules,
     operatorId: 'demo-operator',
     topicId: '0.0.demo',
+    quoteVerifier: new RegistryQuoteVerifier(registry),
   })
 
   const { receipt, verification } = await broker.runFlow({

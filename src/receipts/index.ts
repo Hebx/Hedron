@@ -16,10 +16,23 @@ export interface VerificationResult {
     signature: VerificationCheck
     chainIntegrity: VerificationCheck
     anchoring: VerificationCheck
+    quoteVerified: VerificationCheck
     policyConsistent: VerificationCheck
     status: VerificationCheck
   }
 }
+
+/**
+ * Canonical event order for a settled flow. `QUOTE_VERIFIED` must appear
+ * after the quote is received and strictly before policy evaluation — a chain
+ * that policy-evaluates or pays before verifying the quote is not acceptable
+ * even if every hash matches.
+ */
+const REQUIRED_EVENT_ORDER: readonly string[] = [
+  'QUOTE_RECEIVED',
+  'QUOTE_VERIFIED',
+  'POLICY_EVALUATED',
+] as const
 
 /**
  * Local-mode verifier. Reads events from the supplied emitter (which in mock
@@ -36,6 +49,7 @@ export async function verifyReceipt(
     signature: { ok: false },
     chainIntegrity: { ok: false },
     anchoring: { ok: false },
+    quoteVerified: { ok: false },
     policyConsistent: { ok: false },
     status: { ok: false },
   }
@@ -95,7 +109,42 @@ export async function verifyReceipt(
     checks.anchoring = { ok: false, detail: 'RECEIPT_ISSUED event missing or mismatched' }
   }
 
-  // 6) policy + settlement hash consistency
+  // 6) QUOTE_VERIFIED present, successful, correctly ordered, hash-matched
+  const flowEvents = events.filter((e) => e.flowId === receipt.flowId)
+  const quoteVerifiedEvent = flowEvents.find((e) => e.eventType === 'QUOTE_VERIFIED')
+  if (!quoteVerifiedEvent) {
+    checks.quoteVerified = { ok: false, detail: 'QUOTE_VERIFIED event missing from flow' }
+  } else {
+    const payload = quoteVerifiedEvent.payload as
+      | { ok?: boolean; quoteVerificationHash?: string; failedCheck?: string }
+      | undefined
+    const positions = REQUIRED_EVENT_ORDER.map((type) =>
+      flowEvents.findIndex((e) => e.eventType === type),
+    )
+    const orderOk = positions.every(
+      (pos, i) => pos !== -1 && (i === 0 || pos > (positions[i - 1] as number)),
+    )
+    if (payload?.ok !== true) {
+      checks.quoteVerified = {
+        ok: false,
+        detail: `QUOTE_VERIFIED reported failure${payload?.failedCheck ? ` on '${payload.failedCheck}'` : ''}`,
+      }
+    } else if (!orderOk) {
+      checks.quoteVerified = {
+        ok: false,
+        detail: `event order violation: expected ${REQUIRED_EVENT_ORDER.join(' → ')}`,
+      }
+    } else if (payload.quoteVerificationHash !== receipt.quoteVerificationHash) {
+      checks.quoteVerified = {
+        ok: false,
+        detail: 'receipt.quoteVerificationHash does not match the QUOTE_VERIFIED event',
+      }
+    } else {
+      checks.quoteVerified = { ok: true }
+    }
+  }
+
+  // 7) policy + settlement hash consistency
   const policyEvent = events.find(
     (e) => e.eventType === 'POLICY_EVALUATED' && e.flowId === receipt.flowId,
   )
@@ -112,7 +161,7 @@ export async function verifyReceipt(
       settlementAnchor === receipt.settlementHash,
   }
 
-  // 7) terminal status
+  // 8) terminal status
   const terminal = events.find(
     (e) =>
       (e.eventType === 'EXECUTION_COMPLETED' || e.eventType === 'EXECUTION_FAILED') &&

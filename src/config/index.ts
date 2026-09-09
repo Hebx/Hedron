@@ -132,6 +132,12 @@ export function loadHedronConfig(env: NodeJS.ProcessEnv = process.env): HedronCo
         ...(env.HEDRON_X402_FACILITATOR_URL
           ? { facilitatorUrl: env.HEDRON_X402_FACILITATOR_URL }
           : {}),
+        ...(env.HEDRON_X402_FACILITATOR_API_KEY
+          ? { facilitatorApiKey: env.HEDRON_X402_FACILITATOR_API_KEY }
+          : {}),
+        network: env.HEDRON_X402_NETWORK === 'mainnet' ? 'mainnet' : 'testnet',
+        ...(env.HEDRON_X402_PAY_TO ? { payTo: env.HEDRON_X402_PAY_TO } : {}),
+        ...(env.HEDRON_X402_FEE_PAYER ? { feePayer: env.HEDRON_X402_FEE_PAYER } : {}),
       },
       evm: {
         ...(env.EVM_RPC_URL ? { rpcUrl: env.EVM_RPC_URL } : {}),
